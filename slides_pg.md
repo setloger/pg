@@ -168,38 +168,43 @@ PostgreSQL → WAL → Patroni → etcd
 
 ---
 
-<!-- Слайд 3: Управление инстансом -->
+<!-- Слайд 3а: Управление инстансом -->
 
-# Управление инстансом и безопасность
+# Управление инстансом: pg_ctl
 
 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
 
 <div>
 
-**Управление кластером (Debian)**
+**Режимы остановки**
+
+| Режим | Поведение | Когда использовать |
+|---|---|---|
+| `smart` | Ждёт завершения всех сессий | Плановое окно |
+| `fast` | Откатывает транзакции, корректно останавливается | Стандартный рестарт |
+| `immediate` | Kill -9, Crash Recovery при старте | Только если fast завис |
 
 ```bash
-# Инициализация нового кластера
-pg_createcluster 16 main
-
-# Старт / стоп / статус
-pg_ctlcluster 16 main start
-pg_ctlcluster 16 main status
-
-# НИКОГДА от root:
-sudo -u postgres pg_ctlcluster 16 main start
+pg_ctl stop -D $PGDATA -m fast
 ```
 
 </div>
 
 <div>
 
-**Проверка прав на PGDATA**
+**Перечитывание конфига без рестарта**
 
-```bash
-stat /var/lib/postgresql/16/main
-# Owner: postgres — OK ✅
-# Owner: root     — СЛОМАЕТ при рестарте ❌
+```sql
+SELECT pg_reload_conf();
+```
+
+**Параметры требующие рестарта:**
+
+```sql
+SELECT name FROM pg_settings
+WHERE context = 'postmaster';
+-- shared_buffers, max_connections,
+-- wal_level и др.
 ```
 
 <div class="warn">
@@ -207,6 +212,38 @@ PGDATA никогда не должен принадлежать root
 </div>
 
 </div>
+</div>
+
+---
+
+<!-- Слайд 3б: Роли и безопасность -->
+
+# Роли и безопасность: три слоя
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Слой 1 · СЕТЬ         pg_hba.conf                  │
+│  Кто, откуда, каким методом может подключиться       │
+├─────────────────────────────────────────────────────┤
+│  Слой 2 · АУТЕНТИФИКАЦИЯ   scram-sha-256             │
+│  Проверка пароля — только современный протокол       │
+├─────────────────────────────────────────────────────┤
+│  Слой 3 · АВТОРИЗАЦИЯ   Роли и привилегии            │
+│  GRANT SELECT/INSERT/UPDATE на схемы и таблицы       │
+└─────────────────────────────────────────────────────┘
+```
+
+```sql
+-- Минимально привилегированная роль для приложения:
+CREATE ROLE app_user LOGIN PASSWORD 'secret';
+GRANT CONNECT ON DATABASE mydb TO app_user;
+GRANT USAGE ON SCHEMA public TO app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON ALL TABLES IN SCHEMA public TO app_user;
+```
+
+<div class="warn">
+Приложение никогда не подключается под SUPERUSER. Пробой одного слоя не означает компрометацию всей базы.
 </div>
 
 ---
