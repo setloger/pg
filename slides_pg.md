@@ -348,6 +348,58 @@ SELECT name FROM pg_settings WHERE pending_restart = true;
 
 ---
 
+# Снимок транзакции (Snapshot)
+
+**Snapshot — не копия данных.** Это два числа + список:
+
+```
+Snapshot транзакции txid=160:
+  xmin = 155          ← все транзакции до этой — зафиксированы
+  xmax = 161          ← все транзакции с этого номера — ещё не стартовали
+  xip  = [157, 159]   ← активные (незафиксированные) транзакции
+
+Правило видимости строки:
+  xmin < 160  AND  xmin NOT IN xip  →  строка видна ✅
+  xmin = 157  (IN xip)              →  строка НЕ видна ❌
+  xmin ≥ 161                        →  строка НЕ видна ❌
+```
+
+<div class="info">
+Snapshot фиксируется в момент старта транзакции (READ COMMITTED — каждого запроса). Данные на диске не копируются.
+</div>
+
+---
+
+# Уровни изоляции транзакций
+
+| Уровень | Dirty Read | Non-Repeatable Read | Phantom Read |
+|---|---|---|---|
+| `READ COMMITTED` (дефолт) | ❌ | ✅ возможен | ✅ возможен |
+| `REPEATABLE READ` | ❌ | ❌ | ❌ (PG защищает) |
+| `SERIALIZABLE` | ❌ | ❌ | ❌ |
+
+```sql
+-- READ COMMITTED: каждый запрос видит свежий snapshot
+BEGIN;
+  SELECT balance FROM accounts WHERE id=1; -- 1000
+  -- другая tx: UPDATE accounts SET balance=500 WHERE id=1; COMMIT;
+  SELECT balance FROM accounts WHERE id=1; -- 500 ← другой результат!
+COMMIT;
+
+-- REPEATABLE READ: snapshot фиксируется на BEGIN
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+  SELECT balance FROM accounts WHERE id=1; -- 1000
+  -- другая tx: UPDATE ... COMMIT;
+  SELECT balance FROM accounts WHERE id=1; -- 1000 ← тот же ✅
+COMMIT;
+```
+
+<div class="warn">
+SERIALIZABLE добавляет SSI-блокировки — максимальная безопасность, но выше конфликты и overhead
+</div>
+
+---
+
 <!-- Слайд 8: Долгие транзакции -->
 
 # Долгие транзакции — эффект домино
