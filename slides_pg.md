@@ -818,7 +818,7 @@ wal_level = replica           hot_standby = on
 [Master DB — Publisher]              [Subscriber]
    │                                      │
   WAL → Logical Decoding             pglogical worker
-         (wal2json)                  применяет INSERT/UPDATE/DELETE
+         (pgoutput)                  применяет INSERT/UPDATE/DELETE
    │
   WAL Sender ──── logical slot ──► WAL Receiver
 ```
